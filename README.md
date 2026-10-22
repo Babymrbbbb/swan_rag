@@ -218,6 +218,41 @@ docker compose up --build
 
 ---
 
+## 十一、真实 LLM 链路验证记录（2026-10-22）
+
+> 证明：本服务的 `OpenAICompatibleProvider` 不止能跑 Mock，也能接真实 LLM 端到端产出可用答案。
+
+**验证环境**：沙箱直连商汤真实上游 `https://token.sensenova.cn/v1`（走代理可达；注：`git` 隧道被沙箱策略拦 502，但 LLM REST 端点正常）。
+
+**选用模型**：`sensenova-6.8-flash-lite`（商汤网关 `keys.json` 中的可用模型之一）。
+
+**踩到的坑（已修复）**：该模型是**推理模型**，默认把 token 预算全花在 `reasoning` 思考链上，`message` 里没有 `content` 字段，原 `data["choices"][0]["message"]["content"]` 会取空。
+修复方式（已合入 `app/llm.py` + `app/config.py`）：请求体带 `"reasoning":{"enabled":false}`，并做 `content → reasoning_content` 兜底提取；开关 `RAG_LLM_DISABLE_REASONING`（默认 `true`）。
+
+**`.env` 配置（真实链路）**：
+```ini
+RAG_LLM_PROVIDER=real
+RAG_LLM_BASE_URL=https://token.sensenova.cn/v1
+RAG_LLM_API_KEY=sk-xxxx          # 取自本地商汤网关 keys.json（acc1/acc2/acc3 三把可轮询）
+RAG_LLM_MODEL=sensenova-6.8-flash-lite
+RAG_LLM_DISABLE_REASONING=true   # 关闭思考链，直出 content
+# 向量化保持 mock（与已存库 dim=256 一致）
+```
+
+**验证结果（mock 向量灌库 13 篇 → 真实 /chat，真实网络往返 3.2–4.7s）**：
+
+| 问题 | 真实 LLM 回答 | 召回来源 |
+|---|---|---|
+| 天鹅公主是哪个城市的品牌？ | **清远**（无 RAG 时模型幻觉为「上海」，RAG 检索上下文纠正为清远并引《品牌介绍》原文） | 《品牌介绍：天鹅公主 SWAN NOBLE》 |
+| 2026 夏季推出了哪几款新品？ | 黑金可颂 / 联名桃酥 / 荔枝玫瑰冻芝士 / 青提冷萃欧包 | 《2026 夏季四款新品》 |
+| 目前有多少家门店？ | 43 家（清远 28 / 广州 9 / 佛山 4 / 韶关 2） | 《门店网络》 |
+
+> 关键证据：第 1 问证明 **RAG 检索上下文成功压制了模型参数幻觉**——正是 ADR-002「没有评测闭环的系统不可上线」的落地演示。
+
+**说明**：真实 Key 仅存于本地 `.env`（已被 `.gitignore` 排除，**未进入本仓库**）；远程仓库不含任何 Key。代码改进见 commit `52fe027`。
+
+---
+
 ## 许可
 
 教学 / 作品集用途。知识库内容为合成数据，与任何真实企业经营数据无关。
