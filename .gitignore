@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+
+# 本地数据库（运行时生成）
+*.db
+
+# 密钥与环境
+.env
+
+# 编辑器
+.idea/
+.vscode/
