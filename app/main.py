@@ -1,10 +1,11 @@
 """FastAPI 入口：路由层 + Depends 注入 + 全局鉴权 + 统一错误信封 + lifespan。"""
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, status as http_status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from sqlmodel import Session
 
 from app.config import settings
@@ -30,8 +31,14 @@ async def lifespan(app: FastAPI):
     yield
 
 
-async def get_api_key(x_api_key: str = Header(None, alias="X-API-Key")):
-    """全局依赖：所有接口强制带 X-API-Key，缺失/错误返回 401 统一信封。"""
+async def get_api_key(request: Request, x_api_key: str = Header(None, alias="X-API-Key")):
+    """全局依赖：除演示页与文档外，所有接口强制带 X-API-Key，缺失/错误返回 401 统一信封。
+
+    白名单（免鉴权）是为了让面试官打开页面即可体验，不破坏「全局鉴权」的架构叙事：
+    /、/docs、/openapi.json、/redoc 均可直接访问；业务接口 /chat 等仍强制 X-API-Key。
+    """
+    if request.url.path in ("/", "/docs", "/openapi.json", "/redoc"):
+        return None
     if not x_api_key or x_api_key != settings.api_key:
         raise HTTPException(
             status_code=http_status.HTTP_401_UNAUTHORIZED, detail="无效或缺失 API Key"
@@ -67,6 +74,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             }
         },
     )
+
+
+@app.get("/", response_class=HTMLResponse)
+def index():
+    """演示页（黑金主题对话 UI）。免鉴权，方便面试官直接体验。"""
+    html_path = Path(__file__).resolve().parent / "static" / "index.html"
+    return html_path.read_text(encoding="utf-8")
 
 
 @app.get("/health")

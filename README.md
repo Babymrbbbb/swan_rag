@@ -89,7 +89,8 @@ swan_rag/
 │   ├── embedder.py      # Embedder 抽象 + Mock(哈希) + Real
 │   ├── retriever.py     # 切分 + 余弦召回
 │   ├── rag.py           # 管线编排：ingest / chat
-│   └── eval.py          # golden-set 评测（召回命中率 + 忠实度）
+│   ├── eval.py          # golden-set 评测（召回命中率 + 忠实度）
+│   └── static/index.html # 演示页（黑金主题对话 UI，GET / 返回）
 ├── data/
 │   ├── corpus/          # 天鹅公主合成知识库（13 篇 markdown）
 │   └── eval_golden.json # 评测黄金集
@@ -250,6 +251,37 @@ RAG_LLM_DISABLE_REASONING=true   # 关闭思考链，直出 content
 > 关键证据：第 1 问证明 **RAG 检索上下文成功压制了模型参数幻觉**——正是 ADR-002「没有评测闭环的系统不可上线」的落地演示。
 
 **说明**：真实 Key 仅存于本地 `.env`（已被 `.gitignore` 排除，**未进入本仓库**）；远程仓库不含任何 Key。代码改进见 commit `52fe027`。
+
+---
+
+## 十二、Demo 指南（让面试官能真问真答）
+
+本服务自带一个**黑金主题对话界面**，打开页面即可提问，回答附资料来源——把作品集从「看代码」升级成「能体验」。
+
+### 本地直接起（最快）
+```bash
+# 灌库（mock 向量，离线可跑）
+python seed_corpus.py
+# 起服务
+uvicorn app.main:app --reload --port 8000
+```
+- 演示页：http://127.0.0.1:8000  ← 直接提问
+- API 文档：http://127.0.0.1:8000/docs （Swagger，可在线试各接口）
+- 接真实 LLM：把 `.env` 配成「十一」节的真实配置后再起服务即可，UI 无需改一行。
+
+### Docker 一键起
+```bash
+cp .env.example .env          # 按需填真实 Key（见「十一」节）
+docker compose up --build
+# 浏览器打开 http://localhost:8000
+```
+> `docker-compose.yml` 的 `environment` 用 `${VAR:-默认}` 读取同目录 `.env`（`RAG_LLM_PROVIDER` 默认 `mock`）。填了真实 Key 即自动走真实 LLM。
+
+### 公网部署（可选）
+把镜像推到任意容器平台（Railway / Render / 阿里云等），设置同名环境变量即可。
+- 仅 `GET /`、`/docs`、`/openapi.json`、`/redoc` **免鉴权**（方便访客直接体验）；
+- 业务接口 `POST /chat` 等**仍强制 `X-API-Key`**——演示页内置 `dev-secret-key` 自动携带，访客无需关心。
+- 若要对外公开部署，建议：① 改 `RAG_API_KEY` 为强密钥并更新 UI 里的 `API_KEY`；或 ② 新增一个无鉴权的 `/demo/chat` 端点专门服务演示。
 
 ---
 
