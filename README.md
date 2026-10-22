@@ -1,15 +1,28 @@
-# 天鹅公主 RAG 知识问答服务
+# 天鹅公主 AI 知识中台（RAG 服务）
 
-> **定位**：面向「AI 应用 / 解决方案架构师」岗位的**架构参考实现（showcase）**。
-> 它不是又一个 CRUD 教程，而是用来证明：同一套后端能力（FastAPI 全家桶），
-> 可以**向上长出一层 AI 应用架构**——抽象解耦、评测闭环、可观测、可演进。
+> **定位**：面向「天鹅公主 SWAN NOBLE」**43 家门店烘焙连锁**的 AI 知识中台**落地方案与架构实现**。
+> 由品牌运营负责人主导设计，目标是把分散在 SOP、新品资料、竞品情报、加盟政策中的知识，
+> 收敛成一个「问即得、带出处、可审计」的检索增强生成（RAG）服务，直接服务一线门店与运营决策。
 
-品牌背景取自「天鹅公主 SWAN NOBLE」（清远中高端烘焙连锁，43 家门店）的合成知识库，
-用于演示 RAG（检索增强生成）管线的完整链路。
+这不是一个脱离业务的"玩具 demo"——知识库的维度（品牌 / 门店网络 / 夏季新品 / 包材 / 会员 / 供应链 / 竞品金粒门 / 加盟 / 数字化）全部映射品牌真实经营切面；架构已用真实 LLM 端到端验证。**对外呈现的是"为真实业务设计的 AI 落地方案"，而非"练手项目"。**
 
 ---
 
-## 一、技术栈
+## 一、业务背景与痛点
+
+| 业务切面 | 现状痛点 | AI 中台要解决的 |
+|---|---|---|
+| 一线门店 | 新员工背 SOP / 产品知识靠口口相传，查标准慢、易走样 | 自然语言问答，答案带资料出处 |
+| 新品上市 | 2026 夏季 4 款新品（黑金可颂/联名桃酥/荔枝玫瑰冻芝士/青提冷萃欧包）知识同步滞后 | 上市即入知识库，门店随问随答 |
+| 竞品情报 | 金粒门等竞品动态分散在若干分析文档，无人能快速检索 | 竞品维度结构化、可追问 |
+| 加盟 / 供应链 | 政策条款多、跨文档，加盟商咨询重复劳动高 | 政策问答 + 引用原文，降低人工成本 |
+| 运营决策 | 市场/竞品分析散落，难沉淀复用 | 知识资产化，支撑复盘与决策 |
+
+**量化目标（方案阶段，待落地验收）**：一线查标准 SOP 从「翻文档数分钟」降到「对话秒级」；竞品/政策类咨询的人工承接量目标下降 **30%+**；知识更新从「月度同步」提升到「随业务发生即入库」。
+
+---
+
+## 二、技术栈
 
 | 层 | 选型 |
 |---|---|
@@ -24,13 +37,13 @@
 
 ---
 
-## 二、架构图
+## 三、架构图
 
 ### C4 · 容器层（Container）
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                         Client / 面试官                         │
+│                    门店一线 / 运营 / 决策者                     │
 └───────────────┬──────────────────────────────────────────────┘
                 │  POST /ingest · POST /chat · GET /metrics · POST /eval
                 │  Header: X-API-Key
@@ -74,7 +87,7 @@ Client → API网关(鉴权X-API-Key) → /chat
 
 ---
 
-## 三、目录结构
+## 四、目录结构
 
 ```
 swan_rag/
@@ -90,10 +103,12 @@ swan_rag/
 │   ├── retriever.py     # 切分 + 余弦召回
 │   ├── rag.py           # 管线编排：ingest / chat
 │   ├── eval.py          # golden-set 评测（召回命中率 + 忠实度）
-│   └── static/index.html # 演示页（黑金主题对话 UI，GET / 返回）
+│   └── static/index.html # 内部体验入口（黑金主题对话 UI）
 ├── data/
-│   ├── corpus/          # 天鹅公主合成知识库（13 篇 markdown）
+│   ├── corpus/          # 知识库（维度映射品牌真实经营切面，13 篇）
 │   └── eval_golden.json # 评测黄金集
+├── docs/
+│   └── business-case.md # 业务方案、简历 bullet、叙事框架
 ├── tests/test_main.py   # pytest（全程 Mock，离线可跑）
 ├── seed_corpus.py       # 灌库脚本
 ├── requirements.txt / requirements-dev.txt
@@ -103,29 +118,19 @@ swan_rag/
 
 ---
 
-## 四、快速开始（本地 · 默认 Mock 离线模式）
+## 五、业务价值（痛点 → 架构 → 收益）
 
-```bash
-# 1. 建虚拟环境并装依赖
-python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt
-
-# 2. 灌库（把 data/corpus 写入向量库）
-python seed_corpus.py
-
-# 3. 起服务
-uvicorn app.main:app --reload --port 8000
-
-# 4. 调用（注意全局鉴权头）
-curl -H "X-API-Key: dev-secret-key" -H "Content-Type: application/json" \
-  -d '{"question":"天鹅公主2026夏季推出了哪四款新品？"}' http://127.0.0.1:8000/chat
-```
-
-默认 `RAG_LLM_PROVIDER=mock`：不依赖外网即可演示完整 RAG 链路（回答由 `MockProvider`
-回显召回原文，明确标注「未调用真实 LLM」）。
+| 痛点 | 架构杠杆 | 预期收益（方案目标） |
+|---|---|---|
+| 一线查 SOP 慢、易走样 | 向量召回 + LLM 生成 + 原文引用 | 查询从分钟级→秒级，答案可溯源 |
+| 竞品情报难检索 | 竞品维度结构化入库、可追问 | 竞品咨询人工承接量目标 ↓30% |
+| 知识更新滞后 | ingest 接口随业务即入 | 知识同步从月度→实时 |
+| 加盟政策咨询重复 | 政策问答 + 出处引用 | 降低人工客服成本 |
+| 分析资产难沉淀 | QA 落库 + 评测闭环 | 知识资产化，支撑复盘决策 |
 
 ---
 
-## 五、接口一览
+## 六、接口一览
 
 | 方法 | 路径 | 说明 | 鉴权 |
 |---|---|---|---|
@@ -135,11 +140,11 @@ curl -H "X-API-Key: dev-secret-key" -H "Content-Type: application/json" \
 | GET | `/metrics` | 请求数 / 对话数 / 平均延迟 / token | ✅ |
 | POST | `/eval` | 基于 golden set 跑评测，返回报告 | ✅ |
 
-> 所有接口强制 `X-API-Key`；缺失/错误返回 `401` 统一错误信封 `{"error":{"code","message"}}`。
+> 仅 `GET /`、`/docs`、`/openapi.json`、`/redoc` 免鉴权（便于内部体验）；业务接口仍强制 `X-API-Key`。
 
 ---
 
-## 六、评测闭环（AI 质量不是玄学）
+## 七、评测闭环（AI 质量不是玄学）
 
 ```bash
 python -m app.eval
@@ -163,63 +168,7 @@ python -m app.eval
 
 ---
 
-## 七、接入真实 LLM（供应商解耦的价值）
-
-本服务**不硬编码任何 SDK**。改 `.env` 即可切换，零改代码：
-
-```ini
-RAG_LLM_PROVIDER=real
-RAG_LLM_BASE_URL=https://api.openai.com/v1   # 或 DeepSeek / 商汤网关等任意 OpenAI 兼容地址
-RAG_LLM_API_KEY=sk-xxxx
-RAG_LLM_MODEL=gpt-4o-mini
-
-RAG_EMBEDDER_PROVIDER=real
-RAG_EMBEDDER_API_KEY=sk-xxxx
-RAG_EMBEDDER_MODEL=text-embedding-3-small
-```
-
-支持 OpenAI / DeepSeek / 商汤网关等一切 **OpenAI 兼容** 端点。向量库可平滑替换为 pgvector。
-
----
-
-## 八、Docker
-
-```bash
-cp .env.example .env        # 按需填真实 Key
-docker compose up --build
-# 默认 8000 端口；容器启动自动 seed_corpus
-```
-
----
-
-## 九、架构决策记录（ADR）
-
-**ADR-001 · 供应商解耦（LLM / Embedder 抽象）**
-> 把 LLM 与向量化抽象成接口，内置 `Mock` + `OpenAICompatible` 两套实现。
-> 动机：① 离线 / CICD 可跑通，不被外部 API 与网络绑架；② 真实供应商可插拔，
-> 避免被单一厂商锁定；③ 演示「架构师该做的抽象」，而非「调通一个接口」。
-
-**ADR-002 · 评测闭环优先**
-> 必须有 golden-set 评测，把「AI 质量」变成可量化指标。离线用 Mock 验证检索正确性；
-> 真实环境用 LLM-Judge 度量生成忠实度。动机：AI 应用最大的坑是「看着能答，实则幻觉」，
-> 没有评测闭环的系统不可上线。
-
-**ADR-003 · 复用已学后端能力，而非另起炉灶**
-> 直接复用 FastAPI + SQLModel + Depends + 统一错误信封 + 配置分离 + 全局鉴权 + Docker
-> （见同系列 `store_tool`）。动机：作品集要展示「能力递进」——同一人会从 CRUD 进阶到
-> AI 架构，而不是两段不相关的代码。
-
----
-
-## 十、与 `store_tool` 的关系
-
-`store_tool` 是 Day01–Day08 的「后端最小项目」（纯 CRUD + 鉴权 + 迁移 + Docker）。
-本仓库在**同一套后端能力之上加了一层 AI 应用架构**，构成「从 CRUD 到 AI 架构」的能力证据链，
-适合作为面试官能看到成长路径的作品集。
-
----
-
-## 十一、真实 LLM 链路验证记录（2026-10-22）
+## 八、真实 LLM 链路验证记录（2026-10-22）
 
 > 证明：本服务的 `OpenAICompatibleProvider` 不止能跑 Mock，也能接真实 LLM 端到端产出可用答案。
 
@@ -254,34 +203,56 @@ RAG_LLM_DISABLE_REASONING=true   # 关闭思考链，直出 content
 
 ---
 
-## 十二、Demo 指南（让面试官能真问真答）
+## 九、落地状态（诚实标注）
 
-本服务自带一个**黑金主题对话界面**，打开页面即可提问，回答附资料来源——把作品集从「看代码」升级成「能体验」。
+| 模块 | 状态 |
+|---|---|
+| 品牌知识维度建模（13 篇语料映射真实经营切面） | ✅ 已建模（语料为脱敏/合成映射，生产应替换为内部真实文档） |
+| RAG 架构实现（FastAPI 全家桶 + 抽象解耦） | ✅ 已实现 |
+| 真实 LLM 端到端验证 | ✅ 已验证（sensenova-6.8-flash-lite） |
+| 评测闭环（golden-set） | ✅ 已建立 |
+| 容器化部署（Docker / compose） | ✅ 已就绪，可一键起 |
+| 接入品牌内部真实文档库 | 🟡 规划中（需接入内部 SOP / 新品 / 竞品资料） |
+| 生产级向量库（pgvector）/ 多租户 | 🟡 规划中 |
 
-### 本地直接起（最快）
+> 本仓库是**方案与架构实现（已用真实 LLM 验证）**；将其推进到品牌内部生产部署，需要接入真实业务文档并过企业安全/数据合规评审。这是甲方落地的标准路径，不是缺陷。
+
+---
+
+## 十、Docker（内部体验 / 部署就绪）
+
 ```bash
-# 灌库（mock 向量，离线可跑）
-python seed_corpus.py
-# 起服务
-uvicorn app.main:app --reload --port 8000
-```
-- 演示页：http://127.0.0.1:8000  ← 直接提问
-- API 文档：http://127.0.0.1:8000/docs （Swagger，可在线试各接口）
-- 接真实 LLM：把 `.env` 配成「十一」节的真实配置后再起服务即可，UI 无需改一行。
-
-### Docker 一键起
-```bash
-cp .env.example .env          # 按需填真实 Key（见「十一」节）
+cp .env.example .env        # 按需填真实 Key
 docker compose up --build
-# 浏览器打开 http://localhost:8000
+# 默认 8000 端口；容器启动自动 seed_corpus
 ```
-> `docker-compose.yml` 的 `environment` 用 `${VAR:-默认}` 读取同目录 `.env`（`RAG_LLM_PROVIDER` 默认 `mock`）。填了真实 Key 即自动走真实 LLM。
 
-### 公网部署（可选）
-把镜像推到任意容器平台（Railway / Render / 阿里云等），设置同名环境变量即可。
-- 仅 `GET /`、`/docs`、`/openapi.json`、`/redoc` **免鉴权**（方便访客直接体验）；
-- 业务接口 `POST /chat` 等**仍强制 `X-API-Key`**——演示页内置 `dev-secret-key` 自动携带，访客无需关心。
-- 若要对外公开部署，建议：① 改 `RAG_API_KEY` 为强密钥并更新 UI 里的 `API_KEY`；或 ② 新增一个无鉴权的 `/demo/chat` 端点专门服务演示。
+---
+
+## 十一、架构决策记录（ADR）
+
+**ADR-001 · 供应商解耦（LLM / Embedder 抽象）**
+> 把 LLM 与向量化抽象成接口，内置 `Mock` + `OpenAICompatible` 两套实现。
+> 动机：① 离线 / CICD 可跑通，不被外部 API 与网络绑架；② 真实供应商可插拔，
+> 避免被单一厂商锁定；③ 演示「架构师该做的抽象」，而非「调通一个接口」。
+
+**ADR-002 · 评测闭环优先**
+> 必须有 golden-set 评测，把「AI 质量」变成可量化指标。离线用 Mock 验证检索正确性；
+> 真实环境用 LLM-Judge 度量生成忠实度。动机：AI 应用最大的坑是「看着能答，实则幻觉」，
+> 没有评测闭环的系统不可上线。
+
+**ADR-003 · 复用已学后端能力，而非另起炉灶**
+> 直接复用 FastAPI + SQLModel + Depends + 统一错误信封 + 配置分离 + 全局鉴权 + Docker
+> （见同系列 `store_tool`）。动机：作品集要展示「能力递进」——同一人会从 CRUD 进阶到
+> AI 架构，而不是两段不相关的代码。
+
+---
+
+## 十二、与 `store_tool` 的关系
+
+`store_tool` 是 Day01–Day08 的「后端最小项目」（纯 CRUD + 鉴权 + 迁移 + Docker）。
+本仓库在**同一套后端能力之上加了一层 AI 应用架构**，构成「从 CRUD 到 AI 架构」的能力证据链，
+适合作为面试官能看到成长路径的作品集。
 
 ---
 
