@@ -68,26 +68,34 @@ class OpenAICompatibleProvider(LLMProvider):
     def complete(self, system: str, user: str) -> str:
         if not self.api_key:
             raise RuntimeError("llm_api_key 未配置，无法调用真实 LLM；请设置 RAG_LLM_API_KEY")
+        # 关闭推理模型的「思考链」输出，让其把最终答案直接写入 content 字段，
+        # 避免 reasoning 模型把 token 预算全花在 thinking 上导致 content 为空。
+        # OpenAI 兼容网关对未知字段通常忽略，对标准模型无害。
+        payload = {
+            "model": self.model,
+            "temperature": self.temperature,
+            "max_tokens": self.max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+        if settings.llm_disable_reasoning:
+            payload["reasoning"] = {"enabled": False}
         resp = httpx.post(
             f"{self.base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {self.api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": self.model,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            },
+            json=payload,
             timeout=60,
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        # 兼容推理模型：content 可能为空，退而取 reasoning_content / reasoning
+        msg = data["choices"][0]["message"]
+        return msg.get("content") or msg.get("reasoning_content") or ""
 
 
 def get_llm_provider() -> LLMProvider:

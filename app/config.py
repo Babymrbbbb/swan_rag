@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
     llm_max_tokens: int = 512
+    # 关闭推理模型的思考链（reasoning），让其把最终答案直接写入 content 字段
+    llm_disable_reasoning: bool = True
 
     # 向量化供应商（mock | real）
     embedder_provider: str = "mock"
