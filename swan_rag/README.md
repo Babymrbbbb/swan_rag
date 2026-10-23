@@ -166,6 +166,8 @@ python -m app.eval
 
 `pytest` 同样全程 Mock 跑通（7 个用例：鉴权 401 / 422 / ingest+chat / metrics / eval / health）。
 
+完整评测报告（逐题明细 + Badcase 分析 + 成本/延迟估算）见 [docs/eval-report.md](docs/eval-report.md)。
+
 ---
 
 ## 八、真实 LLM 链路验证记录（2026-10-22）
