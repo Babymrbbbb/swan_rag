@@ -212,6 +212,7 @@ RAG_LLM_DISABLE_REASONING=true   # 关闭思考链，直出 content
 | 真实 LLM 端到端验证 | ✅ 已验证（sensenova-6.8-flash-lite） |
 | 评测闭环（golden-set） | ✅ 已建立 |
 | 容器化部署（Docker / compose） | ✅ 已就绪，可一键起 |
+| 门店智能体 POC 方案与指标体系（巡检准确率/店长减负率/单店 ROI） | 🟡 方案已定义，指标为试点目标值（详见 [docs/business-case.md](docs/business-case.md) 第五节） |
 | 接入品牌内部真实文档库 | 🟡 规划中（需接入内部 SOP / 新品 / 竞品资料） |
 | 生产级向量库（pgvector）/ 多租户 | 🟡 规划中 |
 
