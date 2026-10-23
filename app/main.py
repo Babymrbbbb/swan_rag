@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from sqlmodel import Session
 
 from app.config import settings
-from app.database import get_session, init_db
+from app.database import engine, get_session, init_db
 from app.embedder import get_embedder
 from app.eval import run_eval
 from app.llm import get_llm_provider
@@ -22,12 +22,17 @@ from app.schemas import (
     IngestRequest,
     MetricsResponse,
 )
+from app.seed import reseed_if_needed
+from sqlmodel import Session
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动：建表（生产应改用 Alembic 迁移）
+    # 启动：建表 + 索引自愈合（源文件改动时自动重建，防止「改源忘灌库」）
     init_db()
+    if settings.auto_seed:
+        with Session(engine) as s:
+            reseed_if_needed(s)
     yield
 
 
