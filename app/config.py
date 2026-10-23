@@ -15,8 +15,11 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
-    llm_max_tokens: int = 512
-    # 关闭推理模型的思考链（reasoning），让其把最终答案直接写入 content 字段
+    # 生成 token 上限。默认 1024：推荐的 sensenova-6.8-flash-lite 是推理模型，
+    # 思考链会先消耗大量 token，需留足预算才能让最终答案落到 content 字段。
+    llm_max_tokens: int = 1024
+    # 尽力关闭推理模型的思考链（reasoning），让其把最终答案直接写入 content 字段；
+    # 部分账户/模型会忽略该开关（仍走 thinking），此时依赖上面的 max_tokens 余量。
     llm_disable_reasoning: bool = True
 
     # 向量化供应商（mock | real）

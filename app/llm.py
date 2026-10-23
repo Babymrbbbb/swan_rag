@@ -95,7 +95,7 @@ class OpenAICompatibleProvider(LLMProvider):
         data = resp.json()
         # 兼容推理模型：content 可能为空，退而取 reasoning_content / reasoning
         msg = data["choices"][0]["message"]
-        return msg.get("content") or msg.get("reasoning_content") or ""
+        return msg.get("content") or msg.get("reasoning_content") or msg.get("reasoning") or ""
 
 
 def get_llm_provider() -> LLMProvider:
