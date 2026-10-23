@@ -254,6 +254,9 @@ docker compose up --build
 本仓库在**同一套后端能力之上加了一层 AI 应用架构**，构成「从 CRUD 到 AI 架构」的能力证据链，
 适合作为面试官能看到成长路径的作品集。
 
+- 仓库：https://github.com/Babymrbbbb/store_tool
+- 定位：store_tool 是后端底座，本仓库在其之上叠加 AI 应用架构，二者构成「从 CRUD 到 AI 架构」的能力证据链。
+
 ---
 
 ## 许可
