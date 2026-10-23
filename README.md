@@ -171,6 +171,8 @@ python -m app.eval
 
 完整评测报告（逐题明细 + Badcase 分析 + 成本/延迟估算）见 [docs/eval-report.md](docs/eval-report.md)。
 
+**技术博客**：<a href="docs/blog/rag-data-trust.md" target="_blank">《从"答错 43 家门店"到数据可信：一个 RAG 知识库的可靠性实战》</a>——完整复盘数据事故、单一真相源、自愈索引、接地测试与评测闭环的落地过程。
+
 ---
 
 ## 八、真实 LLM 链路验证记录（2026-10-22）
