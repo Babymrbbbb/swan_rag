@@ -1,0 +1,14 @@
+{
+  "brand": "天鹅公主 SWAN NOBLE",
+  "as_of": "2026",
+  "total_stores": 47,
+  "distribution": {
+    "清远（含连州）": 40,
+    "广州（含花都）": 4,
+    "肇庆": 2,
+    "佛山": 1
+  },
+  "nonexistent_cities": ["韶关"],
+  "source": "C:/Users/Administrator/Desktop/门店数据.xlsx（净 47 家真实门店清单）",
+  "note": "本文件是门店数据的唯一真相源（Single Source of Truth）。data/corpus/*.md 中任何门店相关数字都必须与此一致；tests/test_grounding.py 会自动校验，不一致将阻断 CI。"
+}
