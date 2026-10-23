@@ -1,5 +1,8 @@
 # 天鹅公主 AI 知识中台（RAG 服务）
 
+> **在线体验**：公网部署完成后，在此填入演示地址（如 `https://rag.yourdomain.com`，`/` 为免鉴权演示页，`/docs` 为交互式文档）。
+> 部署步骤见《公网部署操作手册》（本仓库 `docs/deploy.md` 或随附文档）。
+
 > **定位**：面向「天鹅公主 SWAN NOBLE」**47 家门店烘焙连锁**的 AI 知识中台**落地方案与架构实现**。
 > 由品牌运营负责人主导设计，目标是把分散在 SOP、新品资料、竞品情报、加盟政策中的知识，
 > 收敛成一个「问即得、带出处、可审计」的检索增强生成（RAG）服务，直接服务一线门店与运营决策。
@@ -166,6 +169,8 @@ python -m app.eval
 
 `pytest` 同样全程 Mock 跑通（7 个用例：鉴权 401 / 422 / ingest+chat / metrics / eval / health）。
 
+完整评测报告（逐题明细 + Badcase 分析 + 成本/延迟估算）见 [docs/eval-report.md](docs/eval-report.md)。
+
 ---
 
 ## 八、真实 LLM 链路验证记录（2026-10-22）
@@ -212,6 +217,7 @@ RAG_LLM_DISABLE_REASONING=true   # 关闭思考链，直出 content
 | 真实 LLM 端到端验证 | ✅ 已验证（sensenova-6.8-flash-lite） |
 | 评测闭环（golden-set） | ✅ 已建立 |
 | 容器化部署（Docker / compose） | ✅ 已就绪，可一键起 |
+| 门店智能体 POC 方案与指标体系（巡检准确率/店长减负率/单店 ROI） | 🟡 方案已定义，指标为试点目标值（详见 [docs/business-case.md](docs/business-case.md) 第五节） |
 | 接入品牌内部真实文档库 | 🟡 规划中（需接入内部 SOP / 新品 / 竞品资料） |
 | 生产级向量库（pgvector）/ 多租户 | 🟡 规划中 |
 
@@ -285,16 +291,20 @@ uvicorn app.main:app --reload
 
 **ADR-003 · 复用已学后端能力，而非另起炉灶**
 > 直接复用 FastAPI + SQLModel + Depends + 统一错误信封 + 配置分离 + 全局鉴权 + Docker
-> （见同系列 `store_tool`）。动机：作品集要展示「能力递进」——同一人会从 CRUD 进阶到
+> （见同系列 `store_tool`）。动机：展示「能力递进」——同一人会从 CRUD 进阶到
 > AI 架构，而不是两段不相关的代码。
+
+**ADR-004 · 可靠性设计文档化**
+> 失败模式（FMEA）、兜底路径、可恢复性与可观测性设计单独成文：
+> [docs/reliability.md](docs/reliability.md)。动机：可靠性不是「代码里顺手加的防御」，
+> 而是可评审、可演进、可复盘的设计产物。
 
 ---
 
 ## 十二、与 `store_tool` 的关系
 
-`store_tool` 是 Day01–Day08 的「后端最小项目」（纯 CRUD + 鉴权 + 迁移 + Docker）。
-本仓库在**同一套后端能力之上加了一层 AI 应用架构**，构成「从 CRUD 到 AI 架构」的能力证据链，
-适合作为面试官能看到成长路径的作品集。
+`store_tool` 是「后端最小项目」（纯 CRUD + 鉴权 + 迁移 + Docker）。
+本仓库在**同一套后端能力之上加了一层 AI 应用架构**，构成「从 CRUD 到 AI 架构」的能力证据链。
 
 - 仓库：https://github.com/Babymrbbbb/store_tool
 - 定位：store_tool 是后端底座，本仓库在其之上叠加 AI 应用架构，二者构成「从 CRUD 到 AI 架构」的能力证据链。
