@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     chunk_overlap: int = 50
     top_k: int = 3
 
+    # 启动自愈合：比对 corpus 哈希，库为空或源改动时自动重建索引（防「改源忘灌库」）
+    auto_seed: bool = True
+
     model_config = SettingsConfigDict(
         env_file=".env", env_prefix="RAG_", extra="ignore"
     )
