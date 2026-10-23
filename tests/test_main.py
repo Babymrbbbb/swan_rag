@@ -14,6 +14,8 @@ os.environ["RAG_RAG_DB_FILE"] = os.path.join(_TMP, "test.db")
 os.environ["RAG_API_KEY"] = "test-secret-key"
 os.environ["RAG_LLM_PROVIDER"] = "mock"
 os.environ["RAG_EMBEDDER_PROVIDER"] = "mock"
+# 测试自行负责灌库（setup_module），关闭启动自愈合以免重复入库
+os.environ["RAG_AUTO_SEED"] = "false"
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
