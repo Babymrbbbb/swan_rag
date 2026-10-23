@@ -33,3 +33,9 @@ class QA(SQLModel, table=True):
     answer: str
     citations: str = ""  # JSON: [{document_id,title,snippet}]
     created_at: str = Field(default_factory=_now)
+
+
+class Meta(SQLModel, table=True):
+    """键值元表：当前用于保存 corpus 内容哈希，支撑索引自愈合。"""
+    key: str = Field(primary_key=True)
+    value: str = ""
