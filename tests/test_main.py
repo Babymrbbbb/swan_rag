@@ -68,7 +68,7 @@ def test_wrong_api_key_returns_401():
 def test_ingest_and_chat():
     r = client.post(
         "/ingest",
-        json={"title": "测试门店", "content": "天鹅公主在清远有 43 家门店，主打黑金可颂。"},
+        json={"title": "测试门店", "content": "天鹅公主在清远有 40 家门店，全品牌共 47 家，主打黑金可颂。"},
         headers=HEADERS,
     )
     assert r.status_code == 200
@@ -79,7 +79,7 @@ def test_ingest_and_chat():
     body = r.json()
     assert body["answer"]
     assert body["citations"]
-    assert any("43" in c["snippet"] or "门店" in c["title"] for c in body["citations"])
+    assert any("47" in c["snippet"] or "门店" in c["title"] for c in body["citations"])
 
 
 def test_metrics():
