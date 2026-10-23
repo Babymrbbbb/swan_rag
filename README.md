@@ -229,11 +229,14 @@ docker compose up --build
 
 ### 数据护栏（防错误资料回流）
 
-知识库曾因 corpus 凭空编造「43 家含韶关」且改源后未重建索引，长期返回错误门店数。现已设三道护栏：
+知识库曾因 corpus 凭空编造「43 家含韶关」且改源后未重建索引，长期返回错误门店数。现已设多道护栏：
 
-1. **唯一真相源（Single Source of Truth）**：门店数据只写在 `data/store_facts.json`（47 家：清远含连州 40 / 广州含花都 4 / 肇庆 2 / 佛山 1，韶关不存在）。它也是**唯一更新入口**。
+1. **唯一真相源（Single Source of Truth）**：门店数据只写在 `data/store_facts.json`（47 家：清远含连州 40 / 广州含花都 4 / 肇庆 2 / 佛山 1，韶关不存在）；门店以外的关键业务事实收在 `data/business_facts.json`（新品上市日期、加盟门槛、包材规格等）。两者都是**唯一更新入口**。
 2. **源—索引一致（自愈合）**：`app/seed.py` 在启动时比对 `data/corpus/*.md` 内容哈希，库空或源漂移即清旧建新，杜绝「改源忘灌库」。
-3. **内容接地校验（CI 卡点）**：`tests/test_grounding.py` 做**数据无关的一致性校验**——真相源自洽、corpus 所有「X 家门店」表述须等于真相源总数、分布须吻合、不得出现真相源之外的城市。**pytest 不通过即阻断合并**。
+3. **内容接地校验（CI 卡点）**：
+   - `tests/test_grounding.py`：门店数据**数据无关一致性**校验——真相源自洽、corpus 所有「X 家门店」表述须等于真相源总数、分布须吻合、不得出现真相源之外的城市。
+   - `tests/test_business_grounding.py`：业务事实**必现校验**——`business_facts.json` 中每条事实的关键词必须出现在 corpus（新品/加盟/包材/会员/供应链/运维/数字化）。
+   - **pytest 不通过即阻断合并**。
 
 #### 门店数据更新流程（新数据进来时）
 
@@ -250,6 +253,19 @@ pytest tests/test_grounding.py -q
 # 5) 启动应用，自愈合自动重建向量索引
 uvicorn app.main:app --reload
 ```
+
+#### 业务事实更新流程（门店以外，如新品/加盟/包材）
+
+```bash
+# 1) 改唯一真相源：编辑 data/business_facts.json（改 value / 改 must_appear）
+# 2) 同步 data/corpus/*.md 中的对应叙述
+# 3) 跑测试确认必现关键词全部命中
+pytest tests/test_business_grounding.py -q
+# 4) 启动应用，自愈合自动重建向量索引
+uvicorn app.main:app --reload
+```
+
+任一步遗漏（如某文件忘了随真相源更新），对应测试会直接失败并指出缺失关键词，阻断错误资料上线。
 
 若任一步遗漏（如某文件忘了随真相源更新），第 4 步测试会直接失败并指出矛盾门店数，阻断错误资料上线。
 
