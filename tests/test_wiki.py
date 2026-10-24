@@ -4,7 +4,9 @@
 1. 聚合索引能构建出页面（实体/概念）
 2. 检索命中聚合页：问"冰面包"命中 entity/冰面包
 3. 聚合页含来源列表与关键事实
+4. LLM 编译器：mock LLM 输出可解析为聚合页；解析失败降级规则兜底
 """
+import json
 import os
 import sys
 import tempfile
@@ -16,11 +18,12 @@ os.environ["RAG_API_KEY"] = "test-secret-key"
 os.environ["RAG_LLM_PROVIDER"] = "mock"
 os.environ["RAG_EMBEDDER_PROVIDER"] = "mock"
 os.environ["RAG_AUTO_SEED"] = "false"
+os.environ["RAG_WIKI_COMPILER"] = "rule"
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from app.wiki import build_wiki  # noqa: E402
+from app.wiki import LLMWikiIndex, WikiIndex, WikiPage, build_wiki  # noqa: E402
 
 
 def test_wiki_index_builds_pages():
@@ -52,3 +55,48 @@ def test_wiki_save_index():
     wiki.save_index()
     index_path = ROOT / "data" / "wiki" / "index.json"
     assert index_path.exists(), "聚合索引文件未生成"
+
+
+def _mock_llm_page():
+    return WikiPage(
+        title="测试实体",
+        kind="entity",
+        summary="这是一个用于测试的聚合页。",
+        facts=["关键事实1", "关键事实2"],
+        sources=["测试文档"],
+    )
+
+
+def test_llm_compiler_parses_valid_json():
+    """mock LLM 返回合法 JSON → LLMWikiIndex 能解析出聚合页。"""
+    # 构造 LLMWikiIndex 并注入 mock LLM 输出
+    corpus_dir = ROOT / "data" / "corpus"
+    llm_index = LLMWikiIndex.__new__(LLMWikiIndex)
+    llm_index.corpus_dir = corpus_dir
+    llm_index.pages = {}
+    llm_index.term_to_page = {}
+    llm_index.generated_by = "llm-compiler"
+    raw = json.dumps([{
+        "title": "冰面包",
+        "kind": "entity",
+        "summary": "冰面包是夏季爆款。",
+        "facts": ["保质期3天"],
+        "sources": ["冰面包产品线"],
+    }], ensure_ascii=False)
+    pages = llm_index._parse_llm_output(raw)
+    assert pages, "解析合法 JSON 失败"
+    assert pages[0].title == "冰面包"
+    assert pages[0].kind == "entity"
+
+
+def test_llm_compiler_fallback_on_invalid():
+    """mock LLM 返回非法输出 → 降级规则兜底，仍产出聚合页。"""
+    corpus_dir = ROOT / "data" / "corpus"
+    llm_index = LLMWikiIndex.__new__(LLMWikiIndex)
+    llm_index.corpus_dir = corpus_dir
+    llm_index.pages = {}
+    llm_index.term_to_page = {}
+    llm_index.generated_by = "llm-compiler"
+    pages = llm_index._parse_llm_output("这不是JSON")
+    assert pages, "非法输出未降级兜底"
+    assert all(isinstance(p, WikiPage) for p in pages)
