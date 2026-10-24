@@ -59,9 +59,10 @@
 │        │                  │                    │                 │
 │        ▼                  ▼                    ▼                 │
 │  ┌─────────────────────────────────────────────────────────┐   │
-│  │  RAG 管线 (app/rag.py)                                    │   │
-│  │   ingest: 切分 → 向量化 → 存 Chunk                          │   │
-│  │   chat:   向量化查询 → 召回 → 拼 prompt → LLM 生成          │   │
+│  │  完整双轨管线 (app/rag.py)                                │   │
+│  │  聚合层: wiki.search(question) → 命中聚合页优先            │   │
+│  │  ingest: 切分 → 向量化 → 存 Chunk                          │   │
+│  │  chat:   聚合页 + 混合检索(倒排+向量) → 拼 prompt → LLM     │   │
 │  └───────────┬───────────────────────┬─────────────────────┘   │
 │              ▼                       ▼                          │
 │   ┌──────────────────┐      ┌────────────────────────────┐     │
@@ -71,7 +72,8 @@
 │              │                       │                          │
 │              ▼                       ▼                          │
 │   ┌──────────────────────────────────────────────────────┐    │
-│   │  SQLite: Document / Chunk(embedding JSON) / QA        │    │
+│   │  wiki 层: data/wiki/index.json（聚合页索引）          │    │
+│   │  SQLite: Document / Chunk(embedding JSON) / QA      │    │
 │   └──────────────────────────────────────────────────────┘    │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -80,9 +82,10 @@
 
 ```
 Client → API网关(鉴权X-API-Key) → /chat
-  /chat → Embedder.embed(question)         // 向量化查询
-  /chat → Retriever.search(top_k)          // 余弦召回 Chunk
-  /chat → 组装 prompt(系统提示 + 召回原文)
+  /chat → wiki.search(question)            // 聚合层优先：命中聚合页
+  /chat → Embedder.embed(question)          // 向量化查询
+  /chat → Retriever.search(top_k, query_text) // 混合检索：倒排(BM25) + 向量(RRF融合)
+  /chat → 组装 prompt(聚合页/召回原文 + 系统提示)
   /chat → LLMProvider.complete(prompt)     // Mock 或 真实 LLM
   /chat → 记录指标 / 落库 QA
   /chat → {answer, citations, latency_ms} → Client
@@ -103,12 +106,15 @@ swan_rag/
 │   ├── metrics.py       # 进程内指标收集（可观测最小实现）
 │   ├── llm.py           # LLMProvider 抽象 + Mock + OpenAICompatible
 │   ├── embedder.py      # Embedder 抽象 + Mock(哈希) + Real
-│   ├── retriever.py     # 切分 + 余弦召回
-│   ├── rag.py           # 管线编排：ingest / chat
+│   ├── retriever.py     # 双路混合检索：倒排(BM25-lite) + 向量 + RRF 融合
+│   ├── wiki.py          # 聚合层（raw→wiki：实体/概念聚合页，确定性规则版）
+│   ├── rag.py           # 管线编排：聚合层优先 + 混合检索 + LLM 生成
 │   ├── eval.py          # golden-set 评测（召回命中率 + 忠实度）
 │   └── static/index.html # 内部体验入口（黑金主题对话 UI）
 ├── data/
-│   ├── corpus/          # 知识库（维度映射品牌真实经营切面，13 篇）
+│   ├── corpus/          # 知识库（维度映射品牌真实经营切面，14 篇含竞品玛芝莲）
+│   ├── wiki/            # 聚合索引（entity/concept 聚合页，启动自动生成）
+│   ├── business_facts.json / store_facts.json  # 数据真相源
 │   └── eval_golden.json # 评测黄金集
 ├── docs/
 │   └── business-case.md # 业务方案、简历 bullet、叙事框架
@@ -300,6 +306,20 @@ uvicorn app.main:app --reload
 > 失败模式（FMEA）、兜底路径、可恢复性与可观测性设计单独成文：
 > [docs/reliability.md](docs/reliability.md)。动机：可靠性不是「代码里顺手加的防御」，
 > 而是可评审、可演进、可复盘的设计产物。
+
+**ADR-005 · raw → wiki → RAG 双轨（聚合层优先）**
+> 检索不直接只走原始 chunk，而是先查聚合层（`app/wiki.py`：实体/概念聚合页，
+> 含摘要、关键事实、来源列表）。命中聚合页则优先使用聚合上下文，再补充原始 chunk 细节。
+> 动机：把 llm-wiki 的「LLM 参与知识组织」思路落地为可运行实现——同一实体多源聚合为一页，
+> 答案可溯源到来源列表。当前为确定性规则聚合（离线可测），可平滑升级为 LLM 识别聚合。
+
+**ADR-006 · 混合检索（倒排 BM25 + 向量 + RRF 融合）**
+> 召回层双路并行：向量路处理语义（口语化/换说法），倒排路处理精确术语（业务词/编号），
+> 用 RRF（Reciprocal Rank Fusion）融合取 top-k。
+> 动机：单路向量在垂直术语场景可能漏精确命中；单路倒排在口语化场景漏语义。
+> 双路取长补短——这是 llm-wiki「词频饱和 + 业务子库加权」生产检索的通用化实现。
+> 注：当前环境无真实 embedding 服务（商汤网关不支持 /embeddings），向量路使用 mock；
+> 接入真实 Embedder 后（`get_embedder()` 已支持 real），口语化语义召回能力即生效。
 
 ---
 
