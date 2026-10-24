@@ -21,20 +21,20 @@ def corpus_dir() -> Path:
 
 
 def corpus_hash() -> str:
-    """对所有语料 *.md 内容求稳定哈希（按文件名排序，避免目录遍历顺序差异）。"""
+    """对所有语料 *.md 内容求稳定哈希（递归子目录，按相对路径排序，避免目录遍历顺序差异）。"""
     h = hashlib.sha256()
-    for f in sorted(corpus_dir().glob("*.md")):
+    for f in sorted(corpus_dir().rglob("*.md")):
         h.update(f.read_bytes())
     return h.hexdigest()
 
 
 def seed_corpus(session: Session) -> int:
-    """把语料目录 *.md 逐篇 ingest 进向量库（不清空旧数据，仅追加）。"""
+    """把语料目录（含子目录）所有 *.md 逐篇 ingest 进向量库（不清空旧数据，仅追加）。"""
     count = 0
-    for f in sorted(corpus_dir().glob("*.md")):
+    for f in sorted(corpus_dir().rglob("*.md")):
         text = f.read_text(encoding="utf-8")
         title = text.splitlines()[0].lstrip("# ").strip() if text.startswith("#") else f.stem
-        ingest(session, title=title, content=text, source=f.name)
+        ingest(session, title=title, content=text, source=str(f.relative_to(corpus_dir())))
         count += 1
     return count
 
