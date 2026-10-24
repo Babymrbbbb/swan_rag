@@ -233,7 +233,7 @@ class LLMWikiIndex(WikiIndex):
 def build_wiki(corpus_dir: Path = None) -> WikiIndex:
     """构建聚合层。按配置选择编译器：llm 或 rule。"""
     if corpus_dir is None:
-        corpus_dir = Path(__file__).resolve().parent.parent / "data" / "corpus"
+        corpus_dir = Path(settings.corpus_dir)
     if settings.wiki_compiler == "llm":
         return LLMWikiIndex(corpus_dir)
     return WikiIndex(corpus_dir)
