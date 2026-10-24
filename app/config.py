@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # 启动自愈合：比对 corpus 哈希，库为空或源改动时自动重建索引（防「改源忘灌库」）
     auto_seed: bool = True
 
+    # 聚合层编译器：rule=确定性规则（离线可测） | llm=真实 LLM 识别实体/概念并生成聚合页
+    wiki_compiler: str = "rule"
+
     model_config = SettingsConfigDict(
         env_file=".env", env_prefix="RAG_", extra="ignore"
     )
