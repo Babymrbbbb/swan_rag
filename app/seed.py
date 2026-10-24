@@ -12,22 +12,26 @@ from app.config import settings
 from app.models import Chunk, Document, Meta
 from app.rag import ingest
 
-CORPUS_DIR = Path(__file__).resolve().parent.parent / "data" / "corpus"
 _HASH_KEY = "corpus_hash"
 
 
+def corpus_dir() -> Path:
+    """真实语料目录：来自配置（默认 data/corpus；可指向 D:\\WorkBuddy知识库\\wiki 等生产库）。"""
+    return Path(settings.corpus_dir)
+
+
 def corpus_hash() -> str:
-    """对所有 corpus/*.md 内容求稳定哈希（按文件名排序，避免目录遍历顺序差异）。"""
+    """对所有语料 *.md 内容求稳定哈希（按文件名排序，避免目录遍历顺序差异）。"""
     h = hashlib.sha256()
-    for f in sorted(CORPUS_DIR.glob("*.md")):
+    for f in sorted(corpus_dir().glob("*.md")):
         h.update(f.read_bytes())
     return h.hexdigest()
 
 
 def seed_corpus(session: Session) -> int:
-    """把 data/corpus/*.md 逐篇 ingest 进向量库（不清空旧数据，仅追加）。"""
+    """把语料目录 *.md 逐篇 ingest 进向量库（不清空旧数据，仅追加）。"""
     count = 0
-    for f in sorted(CORPUS_DIR.glob("*.md")):
+    for f in sorted(corpus_dir().glob("*.md")):
         text = f.read_text(encoding="utf-8")
         title = text.splitlines()[0].lstrip("# ").strip() if text.startswith("#") else f.stem
         ingest(session, title=title, content=text, source=f.name)
