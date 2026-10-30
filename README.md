@@ -262,6 +262,32 @@ docker compose up --build
 # 默认 8000 端口；容器启动自动比对 corpus 哈希并重建索引（源文件改动即自愈合）
 ```
 
+### Kubernetes 部署（2026-10-30 新增）
+
+生产规范 K8s 清单已就绪（Deployment / Service / HPA / Ingress / Secret / Kustomize）：
+
+```bash
+# 构建镜像
+docker build -t swan-rag:latest .
+
+# 配置 Secret（填入真实 Key）
+cd k8s && cp secret.example.yaml secret.yaml
+
+# 一键部署
+kubectl apply -k k8s/
+
+# 验证
+kubectl get pods -l app=swan-rag
+kubectl get hpa swan-rag
+```
+
+- **Deployment**：2 副本，资源限制，readiness/liveness 健康检查
+- **HPA**：CPU 超 70% 自动扩容，最多 6 副本
+- **Secret**：API Key / LLM Key 从 Secret 注入，不写进镜像
+- 完整手册（含扩缩容验证、FAQ、生产补充）见 [docs/k8s-deploy.md](docs/k8s-deploy.md)
+
+> ⚠️ 诚实标注：清单已按生产规范编写并通过 YAML 语法校验，但**未在真实集群执行**（本机无 Docker 守护进程，无法启动本地 K8s）。在有 Docker / 云 K8s 环境按手册即可部署。
+
 ### 数据护栏（防错误资料回流）
 
 知识库曾因 corpus 凭空编造「43 家含韶关」且改源后未重建索引，长期返回错误门店数。现已设多道护栏：
