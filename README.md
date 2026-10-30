@@ -177,6 +177,27 @@ python -m app.eval
 
 完整评测报告（逐题明细 + Badcase 分析 + 成本/延迟估算）见 [docs/eval-report.md](docs/eval-report.md)。
 
+### 评测门禁（LLMOps CI，2026-10-30 新增）
+
+```bash
+python -m app.eval_cli --mock            # 跑 8 用例，阈值 0.75，生成 Markdown 报告 + 写 history
+python -m app.eval_cli --mock --threshold 0.8   # 自定义阈值
+python -m app.eval_cli --mock --json      # 输出 JSON 供 CI 解析
+```
+
+- 召回命中率低于阈值时**非零退出码（2）**——CI 可据此阻断合并（失败拦截）
+- `--mock` 强制离线 MockProvider + rule 编译，**不受上游 LLM 限流影响，CI 可复现**
+- 产物：`reports/eval_report_<时间戳>.md` + `reports/history.json`（监控看板数据源）
+
+### 监控看板（LLMOps 可观测，2026-10-30 新增）
+
+启动服务后访问 `/monitor`（免鉴权，黑金主题）：
+
+- 实时 KPI：总请求 / 问答请求 / 平均延迟 / Token 消耗（每 5 秒刷新，读 `/metrics`）
+- 评测历史：读 `reports/history.json` 展示召回率/忠实度趋势与通过状态
+
+LLMOps 设计文档（含与生产级差距的诚实边界）见 [docs/llmops.md](docs/llmops.md)。
+
 **技术博客**：<a href="docs/blog/rag-data-trust.md" target="_blank">《从"答错 43 家门店"到数据可信：一个 RAG 知识库的可靠性实战》</a>——完整复盘数据事故、单一真相源、自愈索引、接地测试与评测闭环的落地过程。
 
 ---

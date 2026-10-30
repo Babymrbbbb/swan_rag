@@ -1,4 +1,5 @@
 """FastAPI 入口：路由层 + Depends 注入 + 全局鉴权 + 统一错误信封 + lifespan。"""
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -42,7 +43,7 @@ async def get_api_key(request: Request, x_api_key: str = Header(None, alias="X-A
     白名单（免鉴权）是为了让面试官打开页面即可体验，不破坏「全局鉴权」的架构叙事：
     /、/docs、/openapi.json、/redoc 均可直接访问；业务接口 /chat 等仍强制 X-API-Key。
     """
-    if request.url.path in ("/", "/docs", "/openapi.json", "/redoc"):
+    if request.url.path in ("/", "/docs", "/openapi.json", "/redoc", "/monitor", "/reports/history.json"):
         return None
     if not x_api_key or x_api_key != settings.api_key:
         raise HTTPException(
@@ -86,6 +87,23 @@ def index():
     """演示页（黑金主题对话 UI）。免鉴权，方便面试官直接体验。"""
     html_path = Path(__file__).resolve().parent / "static" / "index.html"
     return html_path.read_text(encoding="utf-8")
+
+
+@app.get("/monitor", response_class=HTMLResponse)
+def monitor():
+    """LLMOps 监控看板（2026-10-30 新增，突破1）。免鉴权，展示评测历史 + 运行时指标。"""
+    html_path = Path(__file__).resolve().parent / "static" / "monitor.html"
+    return html_path.read_text(encoding="utf-8")
+
+
+@app.get("/reports/history.json")
+def report_history():
+    """评测历史（供监控看板读取）。免鉴权。"""
+    reports_dir = Path(__file__).resolve().parent.parent / "reports"
+    history_path = reports_dir / "history.json"
+    if not history_path.exists():
+        return []
+    return json.loads(history_path.read_text(encoding="utf-8"))
 
 
 @app.get("/health")

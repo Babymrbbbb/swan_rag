@@ -17,3 +17,6 @@ venv/
 # 编辑器
 .idea/
 .vscode/
+
+# 运行时生成的 wiki 聚合层缓存（eval 时自动重建）
+data/wiki/
