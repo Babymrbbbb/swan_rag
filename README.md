@@ -332,7 +332,30 @@ uvicorn app.main:app --reload
 
 ---
 
-## 十一、架构决策记录（ADR）
+## 十一、LoRA 领域微调实验（2026-10-30 新增）
+
+在品牌知识语料上做 Qwen2.5-0.5B 的 LoRA 领域微调，让模型回答更贴合知识库口径（与 RAG 互补）。
+
+```bash
+# 数据准备（corpus → 指令数据集）
+python finetune/prepare_data.py
+
+# 训练（需 GPU 环境）
+python finetune/train_lora.py --model Qwen/Qwen2.5-0.5B --epochs 3
+
+# 微调前后效果对比
+python finetune/eval_lora.py --base-model Qwen/Qwen2.5-0.5B --adapter finetune/output/lora_adapter
+```
+
+- 数据流水线：`data/corpus/*.md → finetune/data/train.jsonl → LoRA 适配器 → 对比报告`
+- 训练配置：LoRA r=8 / alpha=16 / lr=2e-4 / 3 epochs / 0.5B 基础模型
+- 实验设计与诚实标注见 [finetune/README.md](finetune/README.md)
+
+> ⚠️ 诚实标注：脚本可复现、数据已生成，但**本机无 GPU 未实际训练**；在有 GPU 环境按 README 即可运行。
+
+---
+
+## 十二、架构决策记录（ADR）
 
 **ADR-001 · 供应商解耦（LLM / Embedder 抽象）**
 > 把 LLM 与向量化抽象成接口，内置 `Mock` + `OpenAICompatible` 两套实现。
