@@ -75,7 +75,17 @@ class RealEmbedder(Embedder):
         return resp.json()["data"][0]["embedding"]
 
 
+# 进程级单例缓存：避免每次 /chat 都新建 embedder（2026-10-30 压测优化）。
+_embedder_cache: dict = {}
+
+
 def get_embedder() -> Embedder:
-    if settings.embedder_provider == "real":
-        return RealEmbedder()
-    return MockEmbedder()
+    provider = settings.embedder_provider
+    if provider in _embedder_cache:
+        return _embedder_cache[provider]
+    if provider == "real":
+        embedder: Embedder = RealEmbedder()
+    else:
+        embedder = MockEmbedder()
+    _embedder_cache[provider] = embedder
+    return embedder

@@ -155,7 +155,15 @@ class WikiIndex:
             "pages": {title: p.to_dict() for title, p in self.pages.items()},
         }
 
-    def save_index(self) -> None:
+    def save_index(self, force: bool = False) -> None:
+        """把聚合索引落盘。
+
+        并发压测优化（2026-10-30）：/chat 每次请求都会调用 save_index()。
+        若索引内容未变化，跳过写盘，避免高并发下大量进程内线程同时写同一 JSON 文件。
+        仅当聚合层实际重建（force=True，构建时调用）才落盘。
+        """
+        if not force:
+            return
         WIKI_DIR.mkdir(parents=True, exist_ok=True)
         INDEX_PATH.write_text(json.dumps(self.to_index_json(), ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -230,10 +238,59 @@ class LLMWikiIndex(WikiIndex):
         return list(rule_index.pages.values())
 
 
-def build_wiki(corpus_dir: Path = None) -> WikiIndex:
-    """构建聚合层。按配置选择编译器：llm 或 rule。"""
+# 进程级缓存：同一份语料只构建一次聚合层（2026-10-30 压测优化）。
+# 用语料哈希判断是否变化；变化才重建。避免每次 /chat 都重复构建 wiki 索引。
+_wiki_cache: dict = {"hash": None, "index": None, "dir_mtime": None}
+
+
+def _corpus_digest(corpus_dir: Path) -> str:
+    """计算语料哈希（与 seed.corpus_hash 相同的遍历方式）。
+
+    并发压测优化（2026-10-30）：在缓存命中场景，每次 /chat 都全盘 rglob + 读全部
+    *.md 算哈希是纯浪费（语料没变哈希不会变）。因此先比较目录 mtime 快照：
+    目录未变则直接复用上一次哈希值，避免每次请求都做磁盘 IO。
+    """
+    import hashlib
+    # 目录最新 mtime 快照（含子目录文件）；若与上次一致则复用缓存哈希
+    latest_mtime = 0.0
+    for f in corpus_dir.rglob("*.md"):
+        try:
+            m = f.stat().st_mtime
+        except OSError:
+            continue
+        if m > latest_mtime:
+            latest_mtime = m
+    if latest_mtime == _wiki_cache.get("dir_mtime") and _wiki_cache.get("hash") is not None:
+        return _wiki_cache["hash"]
+    h = hashlib.sha256()
+    for f in sorted(corpus_dir.rglob("*.md")):
+        h.update(f.read_bytes())
+    digest = h.hexdigest()
+    _wiki_cache["dir_mtime"] = latest_mtime
+    _wiki_cache["hash"] = digest
+    return digest
+
+
+def build_wiki(corpus_dir: Path = None, save: bool = True) -> WikiIndex:
+    """构建聚合层。按配置选择编译器：llm 或 rule。带进程级缓存。
+
+    并发压测优化（2026-10-30）：
+    - 每次调用都全盘扫描算哈希是浪费（语料没变哈希不会变）。缓存命中直接返回。
+    - 缓存命中时不需要写盘（索引没有变化）；仅构建后（语料确实变化）落盘。
+    - save=False 供只读路径（如 /chat）调用，跳过 save_index 写盘。
+    """
     if corpus_dir is None:
         corpus_dir = Path(settings.corpus_dir)
+    # 语料哈希（带目录 mtime 快照缓存，避免每次请求全盘扫描）
+    digest = _corpus_digest(corpus_dir)
+    if _wiki_cache["hash"] == digest and _wiki_cache["index"] is not None:
+        return _wiki_cache["index"]
     if settings.wiki_compiler == "llm":
-        return LLMWikiIndex(corpus_dir)
-    return WikiIndex(corpus_dir)
+        index = LLMWikiIndex(corpus_dir)
+    else:
+        index = WikiIndex(corpus_dir)
+    _wiki_cache["hash"] = digest
+    _wiki_cache["index"] = index
+    if save:
+        index.save_index(force=True)
+    return index

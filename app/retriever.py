@@ -14,10 +14,10 @@ import re
 from collections import Counter, defaultdict
 from typing import List, Tuple
 
-from sqlmodel import Session, select
+from sqlmodel import Session, func, select
 
 from app.embedder import Embedder
-from app.models import Chunk
+from app.models import Chunk, Document
 
 # ---------- 文本处理 ----------
 
@@ -132,6 +132,77 @@ def rrf_fuse(ranked_lists: List[List[Tuple[float, int]]], k: int = 60, top_k: in
 
 # ---------- 检索器 ----------
 
+# 进程级检索缓存（2026-10-30 压测优化）：
+# 每次 /chat 都 select(Chunk).all() + 重建 InvertedIndex + 逐条 json.loads 解析向量，
+# 这些工作在语料不变时结果完全相同，纯属浪费。这里把全量数据常驻内存，
+# 仅当语料哈希变化（由 build_wiki/seed 重建触发）才刷新。
+_CHUNK_CACHE: dict = {"hash": None, "chunks": None, "index": None, "by_id": None, "doc_titles": None}
+
+
+def _corpus_hash_fingerprint(session: Session) -> str:
+    """轻量数据指纹：corpus 文件哈希 + 数据库 chunk 表状态。
+
+    并发压测优化（2026-10-30）：进程级缓存需要知道「数据是否变化」。
+    仅用 corpus 文件哈希不够——/ingest 会直接向数据库写入新 chunk，
+    此时 corpus 文件没变但检索数据变了，缓存必须失效。
+    因此指纹 = corpus 哈希 + chunk 行数 + 最新 chunk id。
+    """
+    from app.config import settings
+    from app.wiki import _corpus_digest
+    from pathlib import Path
+
+    try:
+        corpus_part = _corpus_digest(Path(settings.corpus_dir))
+    except Exception:
+        corpus_part = "?"
+    # 轻量数据库状态：行数 + 最大 id（单条 SQL，走主键索引，避免全表扫描）
+    try:
+        row = session.exec(
+            select(func.count(), func.max(Chunk.id))
+        ).one()
+        db_part = f"{row[0]}:{row[1] if row[1] is not None else 0}"
+    except Exception:
+        db_part = "?"
+    return f"{corpus_part}|{db_part}"
+
+
+def _load_chunk_data(session: Session) -> None:
+    """全量加载 chunk 数据并构建倒排索引，写入进程缓存。"""
+    chunks = session.exec(select(Chunk)).all()
+    index = InvertedIndex(chunks)
+    docs = session.exec(select(Document)).all()
+    _CHUNK_CACHE["chunks"] = chunks
+    _CHUNK_CACHE["index"] = index
+    _CHUNK_CACHE["by_id"] = {c.id: c for c in chunks}
+    _CHUNK_CACHE["doc_titles"] = {d.id: d.title for d in docs}
+
+
+def get_cached_chunks(session: Session) -> tuple:
+    """返回 (chunks, inverted_index, by_id)，带进程级缓存。"""
+    try:
+        digest = _corpus_hash_fingerprint(session)
+    except Exception:
+        digest = None
+    if digest is not None and _CHUNK_CACHE["hash"] == digest and _CHUNK_CACHE["chunks"] is not None:
+        return _CHUNK_CACHE["chunks"], _CHUNK_CACHE["index"], _CHUNK_CACHE["by_id"]
+    _load_chunk_data(session)
+    _CHUNK_CACHE["hash"] = digest
+    return _CHUNK_CACHE["chunks"], _CHUNK_CACHE["index"], _CHUNK_CACHE["by_id"]
+
+
+def get_doc_titles(session: Session) -> dict:
+    """返回 {document_id: title}，带进程级缓存（与 chunk 缓存同生命周期）。"""
+    try:
+        digest = _corpus_hash_fingerprint(session)
+    except Exception:
+        digest = None
+    if digest is not None and _CHUNK_CACHE["hash"] == digest and _CHUNK_CACHE["doc_titles"] is not None:
+        return _CHUNK_CACHE["doc_titles"]
+    _load_chunk_data(session)
+    _CHUNK_CACHE["hash"] = digest
+    return _CHUNK_CACHE["doc_titles"]
+
+
 class Retriever:
     def __init__(self, embedder: Embedder, top_k: int = 3, use_hybrid: bool = True) -> None:
         self.embedder = embedder
@@ -158,11 +229,11 @@ class Retriever:
         """
         k = top_k or self.top_k
         hybrid = self.use_hybrid if use_hybrid is None else use_hybrid
-        chunks = session.exec(select(Chunk)).all()
+        chunks, index, by_id = get_cached_chunks(session)
         if not chunks:
             return []
 
-        # 路1：向量余弦
+        # 路1：向量余弦（复用缓存的全量向量，避免逐条 json.loads）
         vec_ranked: List[Tuple[float, int]] = []
         for c in chunks:
             try:
@@ -174,10 +245,9 @@ class Retriever:
         vec_ranked.sort(key=lambda x: x[0], reverse=True)
         vec_top = vec_ranked[: max(k * 3, 5)]
 
-        # 路2：倒排关键词（query_text 非空且启用混合时）
+        # 路2：倒排关键词（query_text 非空且启用混合时）——复用缓存索引
         kw_top: List[Tuple[float, int]] = []
         if hybrid and query_text.strip():
-            index = InvertedIndex(chunks)
             kw_top = index.search(query_text, top_k=max(k * 3, 5))
 
         # 融合
@@ -186,8 +256,7 @@ class Retriever:
         else:
             fused = vec_top[:k]
 
-        # 映射回 Chunk
-        by_id = {c.id: c for c in chunks}
+        # 映射回 Chunk（复用缓存 by_id）
         result = []
         for score, cid in fused:
             if cid in by_id:

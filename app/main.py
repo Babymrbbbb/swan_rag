@@ -29,6 +29,16 @@ from sqlmodel import Session
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 并发压测优化（2026-10-30）：FastAPI 同步端点由 anyio 线程池执行，
+    # 默认线程池上限 40。压测并发 100 时 60 个请求排队，P50 被队列时间抬高。
+    # 这里把 anyio 线程池调大，让同步端点能同时处理更多请求。
+    try:
+        import anyio
+        limiter = anyio.to_thread.current_default_thread_limiter()
+        limiter.total_tokens = 128
+    except Exception:
+        pass  # 旧版本 anyio 无此 API 则忽略
+
     # 启动：建表 + 索引自愈合（源文件改动时自动重建，防止「改源忘灌库」）
     init_db()
     if settings.auto_seed:

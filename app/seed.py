@@ -52,6 +52,9 @@ def rebuild_corpus(session: Session) -> int:
     """强制重建：清空旧索引 → 重新灌库 → 写入最新哈希。"""
     _clear_index(session)
     n = seed_corpus(session)
+    # upsert：先删除旧哈希再写入，避免重复启动时 UNIQUE 冲突（2026-10-30 压测时发现）
+    for old in session.exec(select(Meta).where(Meta.key == _HASH_KEY)).all():
+        session.delete(old)
     session.add(Meta(key=_HASH_KEY, value=corpus_hash()))
     session.commit()
     return n

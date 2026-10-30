@@ -355,7 +355,38 @@ python finetune/eval_lora.py --base-model Qwen/Qwen2.5-0.5B --adapter finetune/o
 
 ---
 
-## 十二、架构决策记录（ADR）
+## 十二、性能压测（2026-10-30 新增）
+
+对 `/chat` 接口做并发压测（`perf/load_test.py`），并完成针对性优化：
+
+| 指标 | 优化前 | 优化后 | 提升 |
+|---|---|---|---|
+| **QPS** | 56.69 | **182.27** | **+222%** |
+| **P50 延迟** | 1130 ms | **469 ms** | **-59%** |
+| **P95 延迟** | 2225 ms | **555 ms** | **-75%** |
+| **P99 延迟** | 3667 ms | **611 ms** | **-83%** |
+| 错误率 | 0.00% | 0.00% | — |
+
+优化措施（全部零外部依赖）：
+
+1. **SQLite WAL + 并发 PRAGMA**（`app/database.py`）：读写不互斥，消除并发写串行 + fsync
+2. **聚合索引落盘节流**（`app/wiki.py`）：仅构建时写盘，避免每次请求并发写同一文件
+3. **QA 审计异步批量落库**（`app/rag.py`）：请求只入内存队列，后台线程批量写，不再等待 commit
+4. **检索数据进程级缓存**（`app/retriever.py`）：chunk / 倒排索引 / 文档标题常驻内存，
+   指纹 = corpus 哈希 + 数据库状态（单条 SQL），`/ingest` 后自动失效（已修复并验证）
+
+复现命令：
+
+```bash
+RAG_LLM_PROVIDER=mock RAG_WIKI_COMPILER=rule python -m uvicorn app.main:app --port 8000
+python perf/load_test.py --url http://127.0.0.1:8000/chat --concurrency 100 --requests 300
+```
+
+完整瓶颈分析、逐步验证数据、扩展性对照与经验总结见 [docs/perf-report.md](docs/perf-report.md)。
+
+---
+
+## 十三、架构决策记录（ADR）
 
 **ADR-001 · 供应商解耦（LLM / Embedder 抽象）**
 > 把 LLM 与向量化抽象成接口，内置 `Mock` + `OpenAICompatible` 两套实现。
@@ -396,7 +427,7 @@ python finetune/eval_lora.py --base-model Qwen/Qwen2.5-0.5B --adapter finetune/o
 
 ---
 
-## 十二、与 `store_tool` 的关系
+## 十四、与 `store_tool` 的关系
 
 `store_tool` 是「后端最小项目」（纯 CRUD + 鉴权 + 迁移 + Docker）。
 本仓库在**同一套后端能力之上加了一层 AI 应用架构**，构成「从 CRUD 到 AI 架构」的能力证据链。

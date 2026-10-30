@@ -1,5 +1,6 @@
 """RAG 管线编排：ingest（灌库）与 chat（问答）。"""
 import json
+import threading
 import time
 from typing import List, Tuple
 
@@ -10,7 +11,7 @@ from app.embedder import Embedder, get_embedder
 from app.llm import LLMProvider, get_llm_provider
 from app.metrics import metrics
 from app.models import Chunk, Document, QA
-from app.retriever import Retriever, chunk_text
+from app.retriever import Retriever, chunk_text, get_doc_titles
 from app.schemas import ChatCitation
 from app.wiki import WikiPage, build_wiki
 
@@ -19,6 +20,56 @@ SYSTEM_PROMPT = (
     "只能依据下面提供的资料回答用户问题，不得编造资料之外的信息；"
     "若资料不足以回答，请如实说明，并列出你参考的资料来源。"
 )
+
+
+# ---------- 异步批量审计落库（2026-10-30 压测优化） ----------
+# 并发压测时每次 /chat 都同步 commit QA 审计记录，会让所有请求争抢 SQLite 写锁，
+# 严重抬高 P95/P99。这里改为：请求只把 QA 放进内存队列，由后台线程批量写库。
+# 优点：/chat 不再等待 commit；批量写减少事务次数，大幅降低写锁竞争。
+# 代价：极端崩溃场景可能丢失最近若干条审计（可接受，审计非业务关键路径）。
+_AUDIT_QUEUE: list = []
+_AUDIT_LOCK = threading.Lock()
+_AUDIT_STOP = threading.Event()
+_AUDIT_THREAD = None
+
+
+def _audit_worker() -> None:
+    """后台线程：批量把队列中的 QA 写入数据库。"""
+    from app.database import engine
+
+    while not _AUDIT_STOP.is_set():
+        # 取走当前队列全部（批量）
+        with _AUDIT_LOCK:
+            batch = _AUDIT_QUEUE[:]
+            _AUDIT_QUEUE.clear()
+        if batch:
+            try:
+                with Session(engine) as s:
+                    for item in batch:
+                        s.add(QA(**item))
+                    s.commit()
+            except Exception:
+                # 审计失败不阻断业务；丢弃这批（避免死循环重试）
+                pass
+        # 无任务时短暂休眠，避免忙等
+        _AUDIT_STOP.wait(0.05)
+
+
+def _ensure_audit_thread() -> None:
+    """确保后台审计线程已启动（幂等）。"""
+    global _AUDIT_THREAD
+    if _AUDIT_THREAD is None or not _AUDIT_THREAD.is_alive():
+        _AUDIT_THREAD = threading.Thread(target=_audit_worker, name="qa-audit-writer", daemon=True)
+        _AUDIT_THREAD.start()
+
+
+def _enqueue_audit(question: str, answer: str, citations: str) -> None:
+    """把一条 QA 审计放入内存队列（非阻塞）。"""
+    _ensure_audit_thread()
+    with _AUDIT_LOCK:
+        _AUDIT_QUEUE.append(
+            {"question": question, "answer": answer, "citations": citations}
+        )
 
 
 def _wiki_context(wiki_pages: List[WikiPage]) -> Tuple[str, List[ChatCitation]]:
@@ -83,15 +134,14 @@ def chat(
     # 聚合层优先：命中聚合页则用聚合上下文（raw→wiki 双轨的 wiki 层）
     wiki_hits: List[WikiPage] = []
     if use_wiki:
-        wiki = build_wiki()
+        wiki = build_wiki(save=False)  # save=False：索引变化时构建内部才落盘，避免并发写
         wiki_hits = wiki.search(question)
-        wiki.save_index()  # 顺带落盘聚合索引
 
     # RAG 常规路径：混合检索召回原始 chunk
     qvec = embedder.embed(question)
     hits = retriever.search(session, qvec, top_k, query_text=question, use_hybrid=True)
 
-    doc_titles = {d.id: d.title for d in session.exec(select(Document)).all()}
+    doc_titles = get_doc_titles(session)
     chunk_context = "\n\n".join(
         f"[资料{i+1}]（来自《{doc_titles.get(chunk.document_id, '未知')}》）\n{chunk.text}"
         for i, (_score, chunk) in enumerate(hits)
@@ -126,13 +176,11 @@ def chat(
     metrics.record_request()
     metrics.record_chat(latency, approx_tokens)
 
-    # 落库审计
-    qa = QA(
+    # 落库审计（异步批量：不阻塞 /chat 响应，避免并发写锁竞争）
+    _enqueue_audit(
         question=question,
         answer=answer,
         citations=json.dumps([c.model_dump() for c in citations], ensure_ascii=False),
     )
-    session.add(qa)
-    session.commit()
 
     return answer, citations, latency, approx_tokens
